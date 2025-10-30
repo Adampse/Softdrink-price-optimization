@@ -1,0 +1,189 @@
+import pandas as pd
+import numpy as np
+from scipy.optimize import curve_fit
+import matplotlib.pyplot as plt
+
+# examining the store data
+
+path = r"C:\Users\Adam\Desktop\Classes\Christofi-Psenicnik-Project\UofChiDataAlexCameronChristofi\Cub_stores_only.csv"
+df = pd.read_csv(path)
+
+def get_fitting_func(df):
+    pq = "PepsiQuant"
+    dq = "DomQuant"
+    cq = "CokeQuant"
+    # remove rows where the quantites sold are all 0
+    df = df.drop(df[(df.PepsiQuant == 0) & (df.DomQuant == 0) & (df.CokeQuant == 0)].index)
+    # get only the 2nd store for analysis
+    df = df.drop(df[df.Store != 2].index)
+
+    # get only the pepsi / name brand turn
+    df = df[[pq, "PepsiPrice"]]
+    arr = df.to_numpy()
+
+    # get the x and y and calculate correlation
+    x, y = np.log(arr[:,0]), np.log(arr[:,1])
+    norm_x = x / np.sqrt(np.sum(np.square(x)))
+    norm_y = y / np.sqrt(np.sum(np.square(y)))
+    corr = np.correlate(norm_x, norm_y)
+    print(corr)
+    # using log of both values correlation of 0.7164, highly correlated
+
+    # get the unqiue raw quantities and their everage price
+    # x is quantity, y is price
+    x, y = arr[:,0], arr[:,1]
+    x_set = np.asarray(list(set(x)))
+    y_set = []
+    for current_x in x_set:
+        indices = np.where(x == current_x)[0]
+        prices = y[indices]
+        y_set.append(np.mean(prices))
+    y_set = np.asarray(y_set)
+    print(x_set[:5],y_set[:5])
+
+    # scale quantites with ln
+    x_set = np.log(x_set)
+
+    # come up with an equation such that f(x) = y, and fit to a curve
+    # polynomial works better than exponential
+    def expfunc(x, a, b, c):
+        return (a * np.exp(b*x)) + c
+
+    def polyfunc(x,a,b,c,d,e):
+        return a*(x**4) + b*(x**3) + c*(x**2) + d*x + e
+
+    params, _, info, _, _ = curve_fit(polyfunc,y_set,x_set,full_output=True)
+    residuals = info["fvec"] # get the residuals
+    print("Function params:",params) # a=-0.02097515, b=0.47578513, c=-3.92875066, d=13.73637362, e=-15.5109602 
+    print("mean residuals:", sum(abs(residuals))/len(residuals)) # error of 0.10824 using MAE, 0.02127 with MSE, good enough for now
+
+    # using f(price) -> quantity gives the coeffs
+    # a=19.57750781  b=-99.798912    c=188.4804999  d=-159.48614924   e=57.2979186
+
+
+def get_quantity_coeffs(df):
+    # get the prices
+    pr_nb = df["PepsiPrice"].to_numpy()
+    pr_cb = df["CokePrice"].to_numpy()
+    pr_pl = df["DomPrice"].to_numpy()
+
+    # get the quants
+    q_nb = df["PepsiQuant"].to_numpy()
+    q_cb = df["CokeQuant"].to_numpy()
+    q_pl = df["DomQuant"].to_numpy()
+
+    # print the means and sd
+    print("NB_mean =",np.mean(pr_nb),"; NB_sd =",np.sqrt(np.var(pr_nb)),";")
+    print("PL_mean =",np.mean(pr_pl),"; PL_sd =",np.sqrt(np.var(pr_pl)),";")
+    print("CB_mean =",np.mean(pr_cb),"; CB_sd =",np.sqrt(np.var(pr_cb)),";")
+
+    # normalize prices
+    pr_nb = (pr_nb - np.mean(pr_nb))/np.sqrt(np.var(pr_nb))
+    pr_cb = (pr_cb - np.mean(pr_cb))/np.sqrt(np.var(pr_cb))
+    pr_pl = (pr_pl - np.mean(pr_pl))/np.sqrt(np.var(pr_pl))
+
+    # normalize quants
+    q_nb = (q_nb - np.mean(q_nb))/np.sqrt(np.var(q_nb))
+    q_cb = (q_cb - np.mean(q_cb))/np.sqrt(np.var(q_cb))
+    q_pl = (q_pl - np.mean(q_pl))/np.sqrt(np.var(q_pl))
+
+    # setup the system of equations
+    o = np.ones_like(pr_cb)
+    nb_mat = np.asarray([o,-1*pr_nb, pr_pl, pr_cb]).T
+    pl_mat = np.asarray([o,-1*pr_pl, pr_nb, pr_cb]).T
+    cb_mat = np.asarray([o,-1*pr_cb, pr_nb, pr_pl]).T
+
+    # Solve for the a,b,c,d sub i for each quantity
+    v_3, res_3, _, _ = np.linalg.lstsq(nb_mat, q_nb[:,np.newaxis])
+    v_4, res_4, _, _ = np.linalg.lstsq(pl_mat, q_pl[:,np.newaxis])
+    v_5, res_5, _, _ = np.linalg.lstsq(cb_mat, q_cb[:,np.newaxis])
+
+    v_i = np.asarray([v_3,v_4,v_5])
+    print("a3 =",v_3[0], "; b3 =",v_3[1],"; c3 =",v_3[2],"; d3 =",v_3[3],";")
+    print("a4 =",v_4[0], "; b4 =",v_4[1],"; c4 =",v_4[2],"; d4 =",v_4[3],";")
+    print("a5 =",v_5[0], "; b5 =",v_5[1],"; c5 =",v_5[2],"; d5 =",v_5[3],";")
+    print(res_3,res_4,res_5)
+
+
+def plot_objective_functions():
+    u1 = 1.79
+    u2 = 0.99
+    u3 = 1.79
+    a3 = 0 
+    b3 = 0.38053452
+    c3 = 0.118304303
+    d3 = 0.114892915
+    a4 = 0
+    b4 = 0.213473621
+    c4 = 0.753812101
+    d4 = 0.119625997
+    a5 = 0
+    b5 = 0.415746494
+    c5 = 0.156936123
+    d5 = 0.104806508
+    k = 0.29217
+    r = 0.08619
+    q = 0.07923
+
+    # linear system constraints
+    C1_sum =  u1 - ((c3+c4)/(2*b3))*u2 - ((c5+d3)/(2*b3))*u3 -a3/(2*b3) + (k*c4)/(2*b3)
+    C2_sum = -((c3+c4)/(2*b4))*u1 + u2 -((d4+d5)/(2*b4))*u3 + (-a4/(2*b4))-(k/2)
+    C3_sum = -((c5+d3)/(2*b5))*u1 - ((d4+d5)/(2*b5))*u2 + u3 + (-a5/(2*b5)) + (d4/(2*b5))
+    A = np.asarray([[1/2, -c5/(2*b3)],
+                    [-c3/(2*b4), -d5/(2*b4)],
+                    [-d3/(2*b5), 1/2]])
+    b = np.array([C1_sum, C2_sum, C3_sum])
+
+    u4 = np.arange(0.79, 2.50, 0.02)[:,np.newaxis]
+    u5 = np.arange(0.79, 2.50, 0.02)[np.newaxis,:]
+
+    u4_mat = np.repeat(u4, u4.shape[0], axis=1)[np.newaxis,:,:]
+    u5_mat = np.repeat(u5, u5.shape[1], axis=0)[np.newaxis,:,:]
+    x = np.concatenate([u4_mat,u5_mat], axis=0)
+    #x = np.concatenate([u4.T,u5],axis=0)
+    residuals = np.abs(np.tensordot(A,x,axes=1) - b[:,np.newaxis,np.newaxis])
+    res = np.mean(np.sum(residuals,axis=2),axis=1)
+    print("Average residual for each constraint:", res)
+
+    fig = plt.figure()
+    ax = fig.add_subplot(projection="3d")
+    for index, (c, m) in enumerate([('blue','o'),('red','+'),('green','>')]):
+        ax.plot_surface(u4,u5, residuals[index], color=c)
+    ax.set_xlabel('U4')
+    ax.set_ylabel('U5')
+    ax.set_zlabel('Residuals per constraint')
+    plt.show()
+
+    #u4, u5 = np.meshgrid(u4, u5)
+    mu1 = (u4 - q)*(a3 - b3*u1 + c3*u2 + d3*u3)
+    mu2 = (u5 - r)*(a5 - b5*u5 + c5*u1 + d5*u2)
+    z = 0.5*mu1 + 0.5*mu2
+
+    fig, ax = plt.subplots(subplot_kw={"projection":"3d"})
+    surf = ax.plot_surface(u4,u5,z, cmap=plt.cm.coolwarm,
+                       linewidth=0, antialiased=False)
+    ax.set_xlabel('U4')
+    ax.set_ylabel('U5')
+    fig.colorbar(surf, shrink=0.5, aspect=5)
+
+    plt.show()
+
+
+def make_only_stores_csv(df):
+    low_store_ids = [8,18,46,67,73,94,102,103,112,132]
+    high_store_ids = [2,12,14,32,33,52,53,62,68,71,72,75,93,95,97,100,104,106,109,111,123,124,128,130,137]
+    cub_store_ids = [21,40,59,70,77,78,80,83,122]
+
+    all_ids = df["Store"].to_numpy()
+    other_ids = low_store_ids + high_store_ids + cub_store_ids
+    med_store_ids = []
+    for id in all_ids:
+        if id not in other_ids:
+            med_store_ids.append(id)
+        
+    stores = df[df.Store.isin(med_store_ids)]
+    save_path = r"C:\Users\Adam\Desktop\Classes\Christofi-Psenicnik-Project\UofChiDataAlexCameronChristofi\Med_stores_only.csv"
+    stores.to_csv(save_path, index=False)
+
+
+get_quantity_coeffs(df)
